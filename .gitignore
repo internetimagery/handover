@@ -1,5 +1,5 @@
 # Extras
-public/files
+public/dl
 *.js
 
 # Created by https://www.gitignore.io/api/windows,osx,linux,node

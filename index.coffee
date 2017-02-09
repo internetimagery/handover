@@ -24,10 +24,10 @@ handover = (port, directory, debug)->
 
 # Copy files in the most efficient way
 copy = (src, dest, callback)->
-  fs.link file, dest, (err)->
+  fs.link src, dest, (err)->
     return callback err if err and err.code not in ["EXDEV","EPERM"]
     if err
-      fs.copy file, dest, (err)->
+      fs.copy src, dest, (err)->
         callback err
     else
       callback()
@@ -41,7 +41,7 @@ main = (port, files, debug)->
     fs.emptyDir files_path, (err)->
       throw new Error err if err
       each files, (src, done)->
-        dest = path.join files_path, path.basename file
+        dest = path.join files_path, path.basename src
         copy src, dest, (err)->
           done err
       , (err)->
