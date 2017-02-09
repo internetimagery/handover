@@ -11,11 +11,15 @@ handover = (port, directory, debug)->
   connect()
   .use serve directory
   .listen port, ->
+    console.log "Files ready to be handed over. Copy the link below to your friends."
     if debug
-      console.log "Files ready to be handed over. Copy the link below to your friends."
+      console.log "http://localhost:#{port}"
+    else
       localtunnel port, (err, tunnel)->
         throw new Error err if err
         console.log tunnel.url
+  .on "close", ->
+    console.log "File sharing stopped."
 
 main = (port, files, debug)->
   if files.length
