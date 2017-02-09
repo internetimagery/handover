@@ -1,0 +1,29 @@
+{
+  "name": "handover",
+  "version": "1.0.0",
+  "description": "Hand over a file, or files to friends.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "handover": "./bin/handover"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/internetimagery/handover.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/internetimagery/handover/issues"
+  },
+  "homepage": "https://github.com/internetimagery/handover#readme",
+  "dependencies": {
+    "commander": "^2.9.0",
+    "connect": "^3.5.0",
+    "fs-extra": "^2.0.0",
+    "localtunnel": "^1.8.2",
+    "serve-static": "^1.11.2"
+  }
+}
