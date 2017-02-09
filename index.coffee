@@ -7,6 +7,7 @@ each = require 'async/each'
 path = require 'path'
 fs = require 'fs-extra'
 
+# Start up server to hand out our files!
 handover = (port, directory, debug)->
   connect()
   .use serve directory
@@ -21,24 +22,28 @@ handover = (port, directory, debug)->
   .on "close", ->
     console.log "File sharing stopped."
 
+# Copy files in the most efficient way
+copy = (src, dest, callback)->
+  fs.link file, dest, (err)->
+    return callback err if err and err.code not in ["EXDEV","EPERM"]
+    if err
+      fs.copy file, dest, (err)->
+        callback err
+    else
+      callback()
+
 main = (port, files, debug)->
   if files.length
     public_path = path.join __dirname, "public"
-    src_path = path.join __dirname, "src"
-    files = files.concat (path.join src_path, f for f in fs.readdirSync src_path)
+    files_path = path.join public_path, "dl"
     # Create a directory to hold our files
     # Move files into directory
-    fs.emptyDir public_path, (err)->
+    fs.emptyDir files_path, (err)->
       throw new Error err if err
-      each files, (file, done)->
-        dest = path.join public_path, path.basename file
-        fs.link file, dest, (err)->
-          return done err if err and err.code != "EXDEV"
-          if err
-            fs.copy file, dest, (err)->
-              done err
-          else
-            done()
+      each files, (src, done)->
+        dest = path.join files_path, path.basename file
+        copy src, dest, (err)->
+          done err
       , (err)->
         throw new Error err if err
         handover port, public_path, debug
