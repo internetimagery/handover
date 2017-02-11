@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/internetimagery/handover#readme",
   "dependencies": {
+    "archiver": "^1.3.0",
     "async": "^2.1.4",
     "cheerio": "^0.22.0",
     "commander": "^2.9.0",

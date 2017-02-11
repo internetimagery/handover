@@ -7,9 +7,11 @@ each = require 'async/each'
 path = require 'path'
 fs = require 'fs-extra'
 cheerio = require 'cheerio'
+archiver = require 'archiver'
 
+DL_NAME = "dl"
 PUBLIC_DIR = path.join __dirname, "public"
-DL_DIR = path.join PUBLIC_DIR, "dl"
+DL_DIR = path.join PUBLIC_DIR, DL_NAME
 INDEX = path.join PUBLIC_DIR, "index.html"
 
 # Human readable sizing
@@ -60,42 +62,48 @@ add_links = (files, callback)->
         type = path.extname(f)[1..]
         date = new Date(stats.mtime).toDateString()
         size = human_size stats.size
-        html = "
-<tr onClick='window.location = \"dl/#{name}\";'>
-  <td>#{name}</td>
-  <td>#{type}</td>
-  <td>#{date}</td>
-  <td>#{size}</td>
-</tr>"
+        html = "<tr onClick='window.location = \"#{f}\";'>
+                  <td>#{name}</td>
+                  <td>#{type}</td>
+                  <td>#{date}</td>
+                  <td>#{size}</td>
+                </tr>"
         list.append html
       fs.writeFile INDEX, $.html(), "utf8", callback
     catch err
       callback err
 
 main = (port, paths, debug)->
-  # Check each path exists and is a file
-  files = []
-  each paths, (p, done)->
-    fs.stat p, (err, stats)->
-      files.push p if not err and stats.isFile()
-      done()
-  , ->
-    if files.length
-      # Create a directory to hold our files
-      # Move files into directory
-      fs.emptyDir DL_DIR, (err)->
-        throw new Error err if err
-        each files, (src, done)->
+  # Create a directory to hold our files
+  # Move files into directory
+  fs.emptyDir path.join(PUBLIC_DIR, DL_NAME), (err)->
+    throw new Error err if err
+    downloads = []
+    each paths, (src, done)->
+      fs.stat src, (err, stats)->
+        return done() if err
+        if stats.isFile()
           dest = path.join DL_DIR, path.basename src
           copy src, dest, (err)->
+            downloads.push dest
             done err
-        , (err)->
+        else if stats.isDirectory()
+          dest = path.join DL_DIR, path.basename(src) + ".zip"
+          archive = archiver "zip", {store: true}
+          archive.pipe fs.createWriteStream dest
+          archive.directory src
+          archive.finalize()
+          archive.on "error", (err)-> done err
+          archive.on "close", ->
+            downloads.push dest
+            done()
+    , (err)->
+      throw new Error err if err
+      add_links downloads, (err)->
+        throw new Error err if err
+        share port, PUBLIC_DIR, debug, (err, url)->
           throw new Error err if err
-          add_links files, (err)->
-            throw new Error err if err
-            share port, PUBLIC_DIR, debug, (err, url)->
-              throw new Error err if err
-              console.log "Files ready to be handed over. Copy the link below to your friends."
-              console.log url
+          console.log "Files ready to be handed over. Copy the link below to your friends."
+          console.log url
 
 module.exports = main
