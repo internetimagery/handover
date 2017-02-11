@@ -21,11 +21,11 @@
   "homepage": "https://github.com/internetimagery/handover#readme",
   "dependencies": {
     "async": "^2.1.4",
+    "cheerio": "^0.22.0",
     "commander": "^2.9.0",
     "connect": "^3.5.0",
     "fs-extra": "^2.0.0",
     "localtunnel": "^1.8.2",
-    "openpgp": "^2.3.6",
     "serve-static": "^1.11.2"
   }
 }

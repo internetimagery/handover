@@ -1,26 +1,31 @@
 localtunnel = require 'localtunnel'
 commander = require 'commander'
 serve = require 'serve-static'
-openpgp = require 'openpgp'
 connect = require 'connect'
 http = require 'http'
 each = require 'async/each'
 path = require 'path'
 fs = require 'fs-extra'
+cheerio = require 'cheerio'
 
-# openpgp.initWorker {path: "openpgp.worker.min.js"}
-#
-#
-# openpgp.generateKey {
-#   userIds: [{name: "me", email:"them@that.com"}]
-#   numBits: 4096
-# }
-# .then (key)->
-#   console.log key.privateKeyArmored
-#   console.log key.publicKeyArmored
+PUBLIC_DIR = path.join __dirname, "public"
+DL_DIR = path.join PUBLIC_DIR, "dl"
+INDEX = path.join PUBLIC_DIR, "index.html"
+
+# Human readable sizing
+human_size = (bytes)->
+  breakpoint = 1024
+  return "#{bytes}B" if Math.abs bytes < breakpoint
+  units = ['kB','MB','GB','TB','PB','EB','ZB','YB']
+  u = -1
+  loop
+    bytes /= breakpoint
+    u += 1
+    break if Math.abs(bytes) < breakpoint or u >= (units.length - 1)
+  "#{bytes.toFixed 1} #{units[u]}"
 
 # Start up server to hand out our files!
-handover = (port, directory, debug, callback)->
+share = (port, directory, debug, callback)->
   connect()
   .use serve directory
   .listen port, ->
@@ -31,7 +36,7 @@ handover = (port, directory, debug, callback)->
         return callback err if err
         callback null, tunnel.url
 
-# Copy files in the most efficient way
+# Copy files in an efficient way
 copy = (src, dest, callback)->
   fs.link src, dest, (err)->
     return callback err if err and err.code not in ["EXDEV","EPERM"]
@@ -41,23 +46,56 @@ copy = (src, dest, callback)->
     else
       callback()
 
-main = (port, files, debug)->
-  if files.length
-    public_path = path.join __dirname, "public"
-    files_path = path.join public_path, "dl"
-    # Create a directory to hold our files
-    # Move files into directory
-    fs.emptyDir files_path, (err)->
-      throw new Error err if err
-      each files, (src, done)->
-        dest = path.join files_path, path.basename src
-        copy src, dest, (err)->
-          done err
-      , (err)->
-        throw new Error err if err
-        handover port, public_path, debug, (err, url)->
-          throw new Error err if err
-          console.log "Files ready to be handed over. Copy the link below to your friends."
-          console.log url
+# Edit our index.html to include download links to our files
+add_links = (files, callback)->
+  fs.readFile INDEX, "utf8", (err, data)->
+    return callback err if err
+    try
+      $ = cheerio.load data
+      list = $ "#list"
+      list.empty()
+      for f in files
+        stats = fs.statSync f
+        name = path.basename f
+        type = path.extname(f)[1..]
+        date = new Date(stats.mtime).toDateString()
+        size = human_size stats.size
+        html = "
+<tr onClick='window.location = \"dl/#{name}\";'>
+  <td>#{name}</td>
+  <td>#{type}</td>
+  <td>#{date}</td>
+  <td>#{size}</td>
+</tr>"
+        list.append html
+      fs.writeFile INDEX, $.html(), "utf8", callback
+    catch err
+      callback err
 
-module.exports = ->
+main = (port, paths, debug)->
+  # Check each path exists and is a file
+  files = []
+  each paths, (p, done)->
+    fs.stat p, (err, stats)->
+      files.push p if not err and stats.isFile()
+      done()
+  , ->
+    if files.length
+      # Create a directory to hold our files
+      # Move files into directory
+      fs.emptyDir DL_DIR, (err)->
+        throw new Error err if err
+        each files, (src, done)->
+          dest = path.join DL_DIR, path.basename src
+          copy src, dest, (err)->
+            done err
+        , (err)->
+          throw new Error err if err
+          add_links files, (err)->
+            throw new Error err if err
+            share port, PUBLIC_DIR, debug, (err, url)->
+              throw new Error err if err
+              console.log "Files ready to be handed over. Copy the link below to your friends."
+              console.log url
+
+module.exports = main
