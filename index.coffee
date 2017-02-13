@@ -3,16 +3,26 @@ commander = require 'commander'
 serve = require 'serve-static'
 connect = require 'connect'
 http = require 'http'
-each = require 'async/each'
 path = require 'path'
 fs = require 'fs-extra'
 cheerio = require 'cheerio'
 archiver = require 'archiver'
+Password = require 'xkcd-password'
+Promise = require 'promise'
+words = require './words'
 
 DL_NAME = "dl"
 PUBLIC_DIR = path.join __dirname, "public"
 DL_DIR = path.join PUBLIC_DIR, DL_NAME
 INDEX = path.join PUBLIC_DIR, "index.html"
+
+emptyDir = Promise.denodeify fs.emptyDir
+each = Promise.denodeify require "async/each"
+readFile = Promise.denodeify fs.readFile
+writeFile = Promise.denodeify fs.writeFile
+link = Promise.denodeify fs.link
+copy = Promise.denodeify fs.copy
+stats = Promise.denodeify fs.stat
 
 # Human readable sizing
 human_size = (bytes)->
@@ -27,66 +37,69 @@ human_size = (bytes)->
   "#{bytes.toFixed 1} #{units[u]}"
 
 # Start up server to hand out our files!
-share = (port, directory, debug, callback)->
-  connect()
-  .use serve directory
-  .listen port, ->
-    if debug
-      callback null, "http://localhost:#{port}"
-    else
-      localtunnel port, (err, tunnel)->
-        return callback err if err
-        callback null, tunnel.url
+share = (port, directory, debug)->
+  pw = new Password()
+  pw.initWithWordList words
+  pw.generate {numWords: 2}
+  .then (xkcd)->
+    new Promise (ok, fail)->
+      connect()
+      .use serve directory
+      .listen port, {subdomain: xkcd.join "-"}, ->
+        return ok "http://localhost:#{port}" if debug
+        localtunnel port, (err, tunnel)->
+          if err then fail() else ok tunnel.url
+  .catch (err)->
+    throw new Error err
 
 # Copy files in an efficient way
-copy = (src, dest, callback)->
-  fs.link src, dest, (err)->
-    return callback err if err and err.code not in ["EXDEV","EPERM"]
-    if err
-      fs.copy src, dest, (err)->
-        callback err
-    else
-      callback()
+dupe = (src, dest)->
+  link src, dest
+  .catch (err)->
+    throw new Error err if err.code not in ["EXDEV","EPERM"]
+    copy src, dest
 
 # Edit our index.html to include download links to our files
-add_links = (files, callback)->
-  fs.readFile INDEX, "utf8", (err, data)->
-    return callback err if err
-    try
-      $ = cheerio.load data
-      list = $ "#list"
-      list.empty()
-      for f in files
-        stats = fs.statSync f
-        name = path.basename f
-        type = path.extname(f)[1..]
-        date = new Date(stats.mtime).toDateString()
-        size = human_size stats.size
-        html = "<tr onClick='window.location = \"#{f}\";'>
-                  <td>#{name}</td>
-                  <td>#{type}</td>
-                  <td>#{date}</td>
-                  <td>#{size}</td>
-                </tr>"
-        list.append html
-      fs.writeFile INDEX, $.html(), "utf8", callback
-    catch err
-      callback err
+add_links = (files)->
+  $ = null
+  readFile INDEX, "utf8"
+  .then (data)->
+    $ = cheerio.load data
+    list = $ "#list"
+    list.empty()
+    for f in files
+      stats = fs.statSync f
+      name = path.basename f
+      type = path.extname(f)[1..]
+      date = new Date(stats.mtime).toDateString()
+      size = human_size stats.size
+      html = "<tr onClick='window.location = \"#{DL_NAME}/#{name}\";'>
+                <td>#{name}</td>
+                <td>#{type}</td>
+                <td>#{date}</td>
+                <td>#{size}</td>
+              </tr>"
+      list.append html
+  .then ->
+    writeFile INDEX, $.html(), "utf8"
+
+
 
 main = (port, paths, debug)->
   # Create a directory to hold our files
   # Move files into directory
-  fs.emptyDir path.join(PUBLIC_DIR, DL_NAME), (err)->
-    throw new Error err if err
-    downloads = []
+  downloads = []
+  emptyDir DL_DIR
+  .then ->
     each paths, (src, done)->
-      fs.stat src, (err, stats)->
-        return done() if err
-        if stats.isFile()
+      stats src
+      .then (st)->
+        if st.isFile()
           dest = path.join DL_DIR, path.basename src
-          copy src, dest, (err)->
+          dupe src, dest
+          .then ->
             downloads.push dest
-            done err
+            done()
         else if stats.isDirectory()
           dest = path.join DL_DIR, path.basename(src) + ".zip"
           archive = archiver "zip", {store: true}
@@ -97,13 +110,15 @@ main = (port, paths, debug)->
           archive.on "close", ->
             downloads.push dest
             done()
-    , (err)->
-      throw new Error err if err
-      add_links downloads, (err)->
-        throw new Error err if err
-        share port, PUBLIC_DIR, debug, (err, url)->
-          throw new Error err if err
-          console.log "Files ready to be handed over. Copy the link below to your friends."
-          console.log url
+      .catch -> done()
+  .then ->
+    add_links downloads
+  .then ->
+    share port, PUBLIC_DIR, debug
+  .then (url)->
+    console.log "Files ready to be handed over. Copy the link below to your friends."
+    console.log url
+  .catch (err)->
+    throw new Error err
 
 module.exports = main
