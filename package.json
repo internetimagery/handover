@@ -1,5 +1,5 @@
 {
-  "name": "handover",
+  "name": "node-handover",
   "version": "1.0.0",
   "description": "Hand over a file, or files to friends.",
   "main": "index.js",
